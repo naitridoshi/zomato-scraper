@@ -3,18 +3,24 @@ import io
 import pandas as pd
 from export.export import SCRAPE_ZOMATO_DINEOUT_FLASK
 from xlsxwriter import Workbook
+from logger import get_logger
+import json
 
 view = Blueprint("view", __name__)
 RESULT_DICT = {}
 CITY_NAME = ''
+logger, listener = get_logger('website.views')
+listener.start()
 
 @view.route("/", methods=["get", "post"])
 def homepage():
+    logger.info('Rendering homepage')
     return render_template("zs-webpage.html")
 
 
 @view.route("/submit", methods=["get", "post"])
 def formsubmitted():
+    logger.info('Form submitted')
     form_data = request.form.to_dict()
     error_city, error_scroll, more_info, images, city, scroll = form_values(form_data=form_data)
 
@@ -24,6 +30,7 @@ def formsubmitted():
     CITY_NAME = city_name
    
     action = request.form.get('action')
+    logger.debug(f'Form data: {form_data}, action: {action}')
     
     if error_city == False and error_scroll == False:
         try:
@@ -33,14 +40,20 @@ def formsubmitted():
                 images = images,
                 action=action
             )
-
+            logger.info('Initiating scrape')
             results = initiate_scrape.scrape()
 
             global RESULT_DICT
             RESULT_DICT = results
 
         except Exception as e:
-            print(e)
+            logger.error(f'Error during scrape: {e}')
+
+        logger.info('Rendering export page')
+
+        logger.info("Saving results to local file")
+        with open(f'{city_name}_results.json', 'w') as f:
+            json.dump(results, f)
 
         return render_template(
             "zs-export.html",
@@ -51,6 +64,7 @@ def formsubmitted():
             num_of_records = len(results)
         )
     else:
+        logger.warning(f'Form validation failed: error_city={error_city}, error_scroll={error_scroll}')
         return render_template(
             "zs-webpage.html",
 
@@ -63,21 +77,27 @@ def formsubmitted():
 
 @view.route("/download", methods = ["post", "get"])
 def file_export():
+    logger.info('File export requested')
     action = request.form.get('action')
     
 
     global RESULT_DICT
     if action == 'csv':
+        logger.info('Redirecting to download_csv')
         return redirect(url_for('view.download_csv',))
     elif action == 'xlsx':
+        logger.info('Redirecting to download_excel')
         return redirect(url_for('view.download_excel',))
     elif action == 'json':
+        logger.info('Redirecting to download_json')
         return redirect(url_for('view.download_json',))
         
+    logger.warning('Unknown export action')
     return f'{RESULT_DICT}, '
 
 @view.route('/download/csv/')
 def download_csv():
+    logger.info('CSV download requested')
     global RESULT_DICT
     global CITY_NAME
 
@@ -94,6 +114,7 @@ def download_csv():
 
 @view.route('/download/excel/')
 def download_excel():
+    logger.info('Excel download requested')
     global RESULT_DICT
     global CITY_NAME
 
@@ -111,6 +132,7 @@ def download_excel():
 
 @view.route('/download/json/')
 def download_json():
+    logger.info('JSON download requested')
     global RESULT_DICT
     global CITY_NAME
 
@@ -127,6 +149,7 @@ def download_json():
 
 
 def form_values(form_data):
+    logger.debug(f'Validating form data: {form_data}')
     error_city = False
     error_scroll = False
     more_info = False
@@ -150,4 +173,5 @@ def form_values(form_data):
     if "images" in list(form_data.keys()):
         images = True
     
+    logger.debug(f'Validation results: error_city={error_city}, error_scroll={error_scroll}, more_info={more_info}, images={images}, city={city}, scroll={scroll}')
     return error_city, error_scroll, more_info, images, city, scroll
